@@ -1,3 +1,9 @@
+# Ryan Bercich
+# University of St. Thomas - SCALE Microelectronics
+# 20 July 2026
+
+# This program intends to detect coordinates of the chip relative to the teeth of the robotic arm.
+
 import cv2 as cv
 import numpy as np
 

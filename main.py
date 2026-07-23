@@ -3,14 +3,20 @@
 # 20 July 2026
 # main.py
 
-# This program intends to detect coordinates of the chip relative to the teeth of the robotic arm.
+# This OpenCV test program demonstrates grayscale conversion, Gaussian blur,
+# and Canny edge detection. It displays the original image alongside the three
+# processed versions in a labeled 2x2 grid.
 
 import cv2 as cv
 import numpy as np
 
 
 def prepare_panel(image, label, width=1280):
-    """Convert an image to BGR, resize it, and add a label."""
+    """Convert an image to BGR, resize it, and return a labeled panel.
+
+    Grayscale input is converted to BGR so all panels can be combined into the
+    same display. The aspect ratio is preserved at the requested width.
+    """
     if len(image.shape) == 2:
         image = cv.cvtColor(image, cv.COLOR_GRAY2BGR)
 
@@ -23,6 +29,11 @@ def prepare_panel(image, label, width=1280):
 
 
 def main():
+    """Create and display a 2x2 comparison of the image-processing stages.
+
+    Load ``benilde.jpg``, generate grayscale, blurred, and edge-detected
+    versions, and keep the combined window open until the user presses a key.
+    """
     # Load an image from file
     image = cv.imread('benilde.jpg')
 

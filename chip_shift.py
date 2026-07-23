@@ -5,7 +5,7 @@
 
 # Measure a chip's vertical shift relative to a known-good reference image.
 
-from __future__ import annotations # for Python 3.9 compatibility
+from __future__ import annotations  # Postpone evaluation of type annotations.
 
 import argparse
 from pathlib import Path
@@ -13,13 +13,12 @@ from pathlib import Path
 import cv2 as cv
 import numpy as np
 
-"""
-def arguments()
-returns an argparse.Namespace
-This function sets up the command-line argument parser and returns the parsed arguments.
-i.e. python chip_shift.py image.jpg --reference reference.jpg --roi 130 0 40 190 --mm-per-pixel 0.1 --output annotated.jpg
-"""
 def arguments() -> argparse.Namespace:
+    """Define the command-line interface and return the parsed arguments.
+
+    Example:
+        python chip_shift.py image.jpg --reference reference.jpg --roi 130 0 40 190
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("image", type=Path, help="image containing the chip")
     parser.add_argument(
@@ -27,7 +26,7 @@ def arguments() -> argparse.Namespace:
         help="image of the chip in the desired (zero-shift) position",
     )
     parser.add_argument("--roi", nargs=4, type=int, metavar=("X", "Y", "W", "H"),
-                        # Default values are chosen to cover the chip area in a typical image; adjust as needed.
+                        # Initial search area for the repository's sample images.
                         default=(130, 0, 40, 190),
                         help="chip search region; default: 130 0 40 190")
     parser.add_argument("--mm-per-pixel", type=float,
@@ -38,6 +37,10 @@ def arguments() -> argparse.Namespace:
 
 
 def contiguous_runs(mask: np.ndarray) -> list[tuple[int, int]]:
+    """Return the inclusive start and end indices of each True run.
+    For example, ``[False, True, True, False, True]`` produces
+    ``[(1, 2), (4, 4)]``.
+    """
     padded = np.pad(mask.astype(np.int8), (1, 1))
     changes = np.diff(padded)
     starts = np.flatnonzero(changes == 1)
@@ -45,7 +48,15 @@ def contiguous_runs(mask: np.ndarray) -> list[tuple[int, int]]:
     return list(zip(starts.tolist(), ends.tolist()))
 
 
-def detect_chip(image: np.ndarray, roi: tuple[int, int, int, int]):
+def detect_chip(
+    image: np.ndarray,
+    roi: tuple[int, int, int, int],
+) -> tuple[float, tuple[int, int, int, int], float, float]:
+    """Locate the vertical extent of a dark chip within a narrow ROI.
+    The ROI is given as ``(left, top, width, height)``.
+    Return the chip center y-coordinate, its bounding box, Otsu's threshold,
+    and the fraction of dark pixels within the detected row range.
+    """
     x, y, width, height = roi
     gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
     crop = gray[y:y + height, x:x + width]
@@ -82,15 +93,24 @@ def load(path: Path) -> np.ndarray:
 
 
 def label_panel(image: np.ndarray, label: str) -> None:
+    """Draw a title bar and label at the top of an image panel."""
     cv.rectangle(image, (0, 0), (image.shape[1], 30), (0, 0, 0), -1)
     cv.putText(image, label, (8, 21), cv.FONT_HERSHEY_SIMPLEX,
                0.55, (255, 255, 255), 1, cv.LINE_AA)
 
 
-def comparison_image(reference: np.ndarray, image: np.ndarray,
-                     roi: tuple[int, int, int, int], reference_center: float,
-                     center: float, box: tuple[int, int, int, int],
-                     shift_px: float, direction: str) -> np.ndarray:
+def comparison_image(
+    reference: np.ndarray,
+    image: np.ndarray,
+    roi: tuple[int, int, int, int],
+    reference_center: float,
+    center: float,
+    reference_box: tuple[int, int, int, int],
+    box: tuple[int, int, int, int],
+    shift_px: float,
+    direction: str,
+) -> np.ndarray:
+    """Return reference, measured, and absolute-difference panels."""
     if reference.shape != image.shape:
         raise ValueError("Reference and measured images must have the same dimensions")
 
@@ -100,16 +120,19 @@ def comparison_image(reference: np.ndarray, image: np.ndarray,
     difference = cv.applyColorMap(
         cv.cvtColor(difference, cv.COLOR_BGR2GRAY), cv.COLORMAP_TURBO
     )
+    ref_x, ref_top, ref_width, ref_height = reference_box
     x, top, width, height = box
     roi_x, roi_y, roi_w, roi_h = roi
     ref_y, measured_y = round(reference_center), round(center)
-    yellow, green = (0, 220, 255), (80, 255, 80)
+    blue, yellow, green = (255, 180, 0), (0, 220, 255), (80, 255, 80)
 
     for panel in (ref_panel, measured_panel, difference):
-        cv.rectangle(panel, (roi_x, roi_y), (roi_x + roi_w, roi_y + roi_h),
-                     (255, 180, 0), 1)
         cv.line(panel, (0, ref_y), (panel.shape[1] - 1, ref_y), yellow, 1)
+    cv.rectangle(ref_panel, (ref_x, ref_top),
+                 (ref_x + ref_width, ref_top + ref_height), blue, 2)
     cv.rectangle(measured_panel, (x, top), (x + width, top + height), green, 2)
+    cv.rectangle(difference, (roi_x, roi_y),
+                 (roi_x + roi_w, roi_y + roi_h), blue, 1)
     cv.line(measured_panel, (0, measured_y),
             (measured_panel.shape[1] - 1, measured_y), green, 1)
     arrow_x = min(x + width + 16, measured_panel.shape[1] - 10)
@@ -125,17 +148,26 @@ def comparison_image(reference: np.ndarray, image: np.ndarray,
 def main() -> None:
     args = arguments()
     roi = tuple(args.roi)
+
+    # Load images
     image = load(args.image)
     reference = load(args.reference)
-    center, box, threshold, confidence = detect_chip(image, roi)
-    reference_center, _, _, reference_confidence = detect_chip(reference, roi)
 
-    # Image y increases downward, so positive means physically lower in the image.
+    # Call detect_chip() on both the measured image and the reference image.
+    center, box, threshold, confidence = detect_chip(image, roi)
+    reference_center, reference_box, _, reference_confidence = detect_chip(
+        reference, roi
+    )
+
+    # *** Image y increases downward, so positive means physically lower in the image.
+    # REMEMBER For the robot, a positive shift means the chip is physically higher than the reference.
     shift_px = center - reference_center
     direction = "down" if shift_px > 0 else "up" if shift_px < 0 else "centered"
     print(f"chip center:      y={center:.1f} px")
     print(f"reference center: y={reference_center:.1f} px")
     print(f"vertical shift:   {abs(shift_px):.1f} px {direction}")
+
+    # Pixel to millimeter conversion conditionally printed if a calibration factor is provided.
     if args.mm_per_pixel is not None:
         shift_mm = abs(shift_px * args.mm_per_pixel)
         correction = "up" if direction == "down" else "down" if direction == "up" else "none"
@@ -144,9 +176,11 @@ def main() -> None:
     print(f"detection confidence: {confidence:.0%} "
           f"(reference {reference_confidence:.0%}, threshold {threshold:.0f})")
 
+    # returns an annotated image if requested via --output
     if args.output:
         visualization = comparison_image(
-            reference, image, roi, reference_center, center, box, shift_px, direction
+            reference, image, roi, reference_center, center, reference_box, box,
+            shift_px, direction,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         if not cv.imwrite(str(args.output), visualization):

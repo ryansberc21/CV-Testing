@@ -27,7 +27,7 @@ def arguments() -> argparse.Namespace:
     )
     parser.add_argument("--roi", nargs=4, type=int, metavar=("X", "Y", "W", "H"),
                         # Initial search area for the repository's sample images.
-                        default=(130, 0, 40, 190),
+                        default=(130, 0, 40, 190), #   --roi 160 100 20 120 worked better for the zoomed out images.
                         help="chip search region; default: 130 0 40 190")
     parser.add_argument("--mm-per-pixel", type=float,
                         help="optional vertical calibration")
@@ -105,7 +105,6 @@ def comparison_image(
     roi: tuple[int, int, int, int],
     reference_center: float,
     center: float,
-    reference_box: tuple[int, int, int, int],
     box: tuple[int, int, int, int],
     shift_px: float,
     direction: str,
@@ -120,19 +119,16 @@ def comparison_image(
     difference = cv.applyColorMap(
         cv.cvtColor(difference, cv.COLOR_BGR2GRAY), cv.COLORMAP_TURBO
     )
-    ref_x, ref_top, ref_width, ref_height = reference_box
     x, top, width, height = box
     roi_x, roi_y, roi_w, roi_h = roi
     ref_y, measured_y = round(reference_center), round(center)
-    blue, yellow, green = (255, 180, 0), (0, 220, 255), (80, 255, 80)
+    yellow, green = (0, 220, 255), (80, 255, 80)
 
     for panel in (ref_panel, measured_panel, difference):
+        cv.rectangle(panel, (roi_x, roi_y), (roi_x + roi_w, roi_y + roi_h),
+                     (255, 180, 0), 1)
         cv.line(panel, (0, ref_y), (panel.shape[1] - 1, ref_y), yellow, 1)
-    cv.rectangle(ref_panel, (ref_x, ref_top),
-                 (ref_x + ref_width, ref_top + ref_height), blue, 2)
     cv.rectangle(measured_panel, (x, top), (x + width, top + height), green, 2)
-    cv.rectangle(difference, (roi_x, roi_y),
-                 (roi_x + roi_w, roi_y + roi_h), blue, 1)
     cv.line(measured_panel, (0, measured_y),
             (measured_panel.shape[1] - 1, measured_y), green, 1)
     arrow_x = min(x + width + 16, measured_panel.shape[1] - 10)
@@ -155,9 +151,7 @@ def main() -> None:
 
     # Call detect_chip() on both the measured image and the reference image.
     center, box, threshold, confidence = detect_chip(image, roi)
-    reference_center, reference_box, _, reference_confidence = detect_chip(
-        reference, roi
-    )
+    reference_center, _, _, reference_confidence = detect_chip(reference, roi)
 
     # *** Image y increases downward, so positive means physically lower in the image.
     # REMEMBER For the robot, a positive shift means the chip is physically higher than the reference.
@@ -179,7 +173,7 @@ def main() -> None:
     # returns an annotated image if requested via --output
     if args.output:
         visualization = comparison_image(
-            reference, image, roi, reference_center, center, reference_box, box,
+            reference, image, roi, reference_center, center, box,
             shift_px, direction,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
